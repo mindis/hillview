@@ -20,7 +20,7 @@ package org.hillview;
 import com.google.gson.JsonElement;
 import com.google.gson.internal.Streams;
 import com.google.gson.stream.JsonReader;
-import rx.Subscription;
+import io.reactivex.subscribers.ResourceSubscriber;
 
 import javax.websocket.*;
 import javax.websocket.server.ServerEndpoint;
@@ -124,12 +124,12 @@ public final class RpcServer {
     @SuppressWarnings("unused")
     @OnClose
     public void onClose(final Session session, final CloseReason reason) {
-        Subscription sub = RpcObjectManager.instance.getSubscription(session);
+        ResourceSubscriber sub = RpcObjectManager.instance.getSubscription(session);
         if (sub == null) {
             logger.log(Level.WARNING, "Cancellation failed: no subscription " + this.toString());
         } else {
             logger.log(Level.INFO, "Unsubscribing " + this.toString());
-            sub.unsubscribe();
+            sub.dispose();
             RpcObjectManager.instance.removeSubscription(session);
         }
 

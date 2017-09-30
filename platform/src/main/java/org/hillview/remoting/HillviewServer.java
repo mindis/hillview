@@ -7,6 +7,8 @@ import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
+import io.reactivex.Flowable;
+import io.reactivex.subscribers.ResourceSubscriber;
 import org.apache.commons.lang3.SerializationUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.hillview.dataset.api.IDataSet;
@@ -16,9 +18,6 @@ import org.hillview.pb.Command;
 import org.hillview.pb.HillviewServerGrpc;
 import org.hillview.pb.PartialResponse;
 import org.hillview.utils.Converters;
-import rx.Observable;
-import rx.Subscriber;
-import rx.Subscription;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -48,7 +47,7 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
     private final Server server;
     private final AtomicInteger dsIndex = new AtomicInteger(0);
     private final ConcurrentHashMap<Integer, IDataSet> dataSets;
-    private final ConcurrentHashMap<UUID, Subscription> operationToObservable
+    private final ConcurrentHashMap<UUID, ResourceSubscriber> operationToObservable
             = new ConcurrentHashMap<>();
     private final HostAndPort listenAddress;
     private final ConcurrentHashMap<ByteString, Map<Integer, PartialResponse>> memoizedCommands
@@ -69,13 +68,13 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
         this.dataSets.put(this.dsIndex.incrementAndGet(), dataSet);
     }
 
-    private Subscriber<PartialResult<IDataSet>> createSubscriber(final Command command,
-            final  UUID id, final StreamObserver<PartialResponse> responseObserver) {
-        return new Subscriber<PartialResult<IDataSet>>() {
+    private ResourceSubscriber<PartialResult<IDataSet>> createSubscriber(final Command command,
+                                                                 final  UUID id, final StreamObserver<PartialResponse> responseObserver) {
+        return new ResourceSubscriber<PartialResult<IDataSet>>() {
             @Nullable private PartialResponse memoizedResult = null;
 
             @Override
-            public void onCompleted() {
+            public void onComplete() {
                 responseObserver.onCompleted();
                 HillviewServer.this.operationToObservable.remove(id);
                 if (MEMOIZE && this.memoizedResult != null) {
@@ -129,11 +128,12 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
 
             final MapOperation mapOp = SerializationUtils.deserialize(bytes);
             final UUID commandId = new UUID(command.getHighId(), command.getLowId());
-            final Observable<PartialResult<IDataSet>> observable =
+            final Flowable<PartialResult<IDataSet>> observable =
                     this.dataSets.get(command.getIdsIndex())
                                  .map(mapOp.mapper);
-            final Subscription sub = observable.subscribe(this.createSubscriber(command, commandId, responseObserver));
-            this.operationToObservable.put(commandId, sub);
+            final ResourceSubscriber subscriber = this.createSubscriber(command, commandId, responseObserver);
+            observable.subscribe(subscriber);
+            this.operationToObservable.put(commandId, subscriber);
         } catch (final Exception e) {
             e.printStackTrace();
             responseObserver.onError(asStatusRuntimeException(e));
@@ -159,12 +159,12 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
             }
             final FlatMapOperation mapOp = SerializationUtils.deserialize(bytes);
             final UUID commandId = new UUID(command.getHighId(), command.getLowId());
-            final Observable<PartialResult<IDataSet>> observable =
+            final Flowable<PartialResult<IDataSet>> observable =
                     this.dataSets.get(command.getIdsIndex())
                             .flatMap(mapOp.mapper);
-            final Subscription sub = observable.subscribe(this.createSubscriber(command,
-                                                                                commandId, responseObserver));
-            this.operationToObservable.put(commandId, sub);
+            final ResourceSubscriber subscriber = this.createSubscriber(command, commandId, responseObserver);
+            observable.subscribe(subscriber);
+            this.operationToObservable.put(commandId, subscriber);
         } catch (final Exception e) {
             e.printStackTrace();
             responseObserver.onError(asStatusRuntimeException(e));
@@ -187,14 +187,14 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
             }
             final byte[] bytes = command.getSerializedOp().toByteArray();
             final SketchOperation sketchOp = SerializationUtils.deserialize(bytes);
-            final Observable<PartialResult> observable = this.dataSets.get(command.getIdsIndex())
+            final Flowable<PartialResult> observable = this.dataSets.get(command.getIdsIndex())
                                                                       .sketch(sketchOp.sketch);
             final UUID commandId = new UUID(command.getHighId(), command.getLowId());
-            final Subscription sub = observable.subscribe(new Subscriber<PartialResult>() {
+            final ResourceSubscriber subscriber = new ResourceSubscriber<PartialResult>() {
                 @Nullable private Object sketchResultAccumulator = sketchOp.sketch.getZero();
 
                 @Override
-                public void onCompleted() {
+                public void onComplete() {
                     responseObserver.onCompleted();
                     HillviewServer.this.operationToObservable.remove(commandId);
 
@@ -228,8 +228,9 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
                                                            .setSerializedOp(ByteString.copyFrom(bytes))
                                                            .build());
                 }
-            });
-            this.operationToObservable.put(commandId, sub);
+            };
+            observable.subscribe(subscriber);
+            this.operationToObservable.put(commandId, subscriber);
         } catch (final Exception e) {
             e.printStackTrace();
             responseObserver.onError(asStatusRuntimeException(e));
@@ -255,13 +256,13 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
             }
 
             final IDataSet other = this.dataSets.get(zipOp.datasetIndex);
-            final Observable<PartialResult<IDataSet>> observable =
+            final Flowable<PartialResult<IDataSet>> observable =
                     this.dataSets.get(command.getIdsIndex())
                                  .zip(other);
             final UUID commandId = new UUID(command.getHighId(), command.getLowId());
-            final Subscription sub = observable.subscribe(
-                    this.createSubscriber(command, commandId, responseObserver));
-            this.operationToObservable.put(commandId, sub);
+            final ResourceSubscriber subscriber = this.createSubscriber(command, commandId, responseObserver);
+            observable.subscribe(subscriber);
+            this.operationToObservable.put(commandId, subscriber);
         } catch (final Exception e) {
             e.printStackTrace();
             responseObserver.onError(asStatusRuntimeException(e));
@@ -276,9 +277,9 @@ public class HillviewServer extends HillviewServerGrpc.HillviewServerImplBase {
         try {
             final byte[] bytes = command.getSerializedOp().toByteArray();
             final UnsubscribeOperation unsubscribeOp = SerializationUtils.deserialize(bytes);
-            final Subscription subscription = this.operationToObservable.remove(unsubscribeOp.id);
-            if (subscription != null) {
-                subscription.unsubscribe();
+            final ResourceSubscriber subscriber = this.operationToObservable.remove(unsubscribeOp.id);
+            if (subscriber != null) {
+                subscriber.dispose();
             }
         } catch (final Exception e) {
             LOG.warning(e.getMessage());

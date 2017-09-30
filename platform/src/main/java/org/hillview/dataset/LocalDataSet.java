@@ -18,9 +18,9 @@
 
 package org.hillview.dataset;
 
+import io.reactivex.Flowable;
+import io.reactivex.schedulers.Schedulers;
 import org.hillview.dataset.api.*;
-import rx.Observable;
-import rx.schedulers.Schedulers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -70,15 +70,15 @@ public class LocalDataSet<T> implements IDataSet<T> {
      * @param <R> Type of result produced.
      * @return    An observable stream which contains just the zero value, produced lazily.
      */
-    private <R> Observable<PartialResult<R>> zero(Callable<R> z) {
+    private <R> Flowable<PartialResult<R>> zero(Callable<R> z) {
         // The callable is used to produce the zero value lazily only when someone subscribes
         // to the observable.
-        Observable<R> zero = Observable.fromCallable(z);
+        Flowable<R> zero = Flowable.fromCallable(z);
         return zero.map(e-> new PartialResult<R>(0.0, e));
     }
 
     @Override
-    public <S> Observable<PartialResult<IDataSet<S>>> map(final IMap<T, S> mapper) {
+    public <S> Flowable<PartialResult<IDataSet<S>>> map(final IMap<T, S> mapper) {
         // Actual map computation performed lazily when observable is subscribed to.
         final Callable<IDataSet<S>> callable = () -> {
             try {
@@ -88,16 +88,16 @@ public class LocalDataSet<T> implements IDataSet<T> {
                 throw new Exception(t);
             }
         };
-        final Observable<IDataSet<S>> mapped = Observable.fromCallable(callable);
+        final Flowable<IDataSet<S>> mapped = Flowable.fromCallable(callable);
         // Wrap the produced data in a PartialResult
-        Observable<PartialResult<IDataSet<S>>> data = mapped.map(PartialResult::new);
+        Flowable<PartialResult<IDataSet<S>>> data = mapped.map(PartialResult::new);
         if (this.separateThread)
             data = data.observeOn(Schedulers.computation());
         return data;
     }
 
     @Override
-    public <S> Observable<PartialResult<IDataSet<S>>> flatMap(IMap<T, List<S>> mapper) {
+    public <S> Flowable<PartialResult<IDataSet<S>>> flatMap(IMap<T, List<S>> mapper) {
         // Actual map computation performed lazily when observable is subscribed to.
         final Callable<IDataSet<S>> callable = () -> {
             try {
@@ -112,29 +112,29 @@ public class LocalDataSet<T> implements IDataSet<T> {
                 throw new Exception(t);
             }
         };
-        final Observable<IDataSet<S>> mapped = Observable.fromCallable(callable);
+        final Flowable<IDataSet<S>> mapped = Flowable.fromCallable(callable);
         // Wrap the produced data in a PartialResult
-        Observable<PartialResult<IDataSet<S>>> data = mapped.map(PartialResult::new);
+        Flowable<PartialResult<IDataSet<S>>> data = mapped.map(PartialResult::new);
         if (this.separateThread)
             data = data.observeOn(Schedulers.computation());
         return data;
     }
 
     @Override
-    public <S> Observable<PartialResult<IDataSet<Pair<T, S>>>> zip(final IDataSet<S> other) {
+    public <S> Flowable<PartialResult<IDataSet<Pair<T, S>>>> zip(final IDataSet<S> other) {
         if (!(other instanceof LocalDataSet<?>))
             throw new RuntimeException("Unexpected type in Zip " + other);
         final LocalDataSet<S> lds = (LocalDataSet<S>) other;
         final Pair<T, S> data = new Pair<T, S>(this.data, lds.data);
         final LocalDataSet<Pair<T, S>> retval = new LocalDataSet<Pair<T, S>>(data);
         // This is very fast, so there is no need to use a callable or to return a zero.
-        return Observable.just(new PartialResult<IDataSet<Pair<T, S>>>(retval));
+        return Flowable.just(new PartialResult<IDataSet<Pair<T, S>>>(retval));
     }
 
     @Override
-    public <R> Observable<PartialResult<R>> sketch(final ISketch<T, R> sketch) {
+    public <R> Flowable<PartialResult<R>> sketch(final ISketch<T, R> sketch) {
         // Immediately return a zero partial result
-        final Observable<PartialResult<R>> zero = this.zero(sketch::zero);
+        final Flowable<PartialResult<R>> zero = this.zero(sketch::zero);
         // Actual sketch computation performed lazily when observable is subscribed to.
         final Callable<R> callable = () -> {
             try {
@@ -143,11 +143,11 @@ public class LocalDataSet<T> implements IDataSet<T> {
                 throw new Exception(t);
             }
         };
-        final Observable<R> sketched = Observable.fromCallable(callable);
+        final Flowable<R> sketched = Flowable.fromCallable(callable);
         // Wrap sketch results in a stream of PartialResults.
-        final Observable<PartialResult<R>> pro = sketched.map(PartialResult::new);
+        final Flowable<PartialResult<R>> pro = sketched.map(PartialResult::new);
         // Concatenate with the zero.
-        Observable<PartialResult<R>> result = zero.concatWith(pro);
+        Flowable<PartialResult<R>> result = zero.concatWith(pro);
         if (this.separateThread)
             result = result.observeOn(Schedulers.computation());
         return result;

@@ -39,9 +39,9 @@
         </dependency>
         <!-- Java reactive APIs: Observables -->
         <dependency>
-            <groupId>io.reactivex</groupId>
+            <groupId>io.reactivex.rxjava2</groupId>
             <artifactId>rxjava</artifactId>
-            <version>1.2.9</version>
+            <version>2.1.4</version>
         </dependency>
          <!-- Tomcat web application server: local installation -->
         <dependency>

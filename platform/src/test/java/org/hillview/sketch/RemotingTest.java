@@ -20,6 +20,8 @@ package org.hillview.sketch;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
+import io.reactivex.Flowable;
+import io.reactivex.subscribers.TestSubscriber;
 import org.hillview.dataset.LocalDataSet;
 import org.hillview.dataset.ParallelDataSet;
 import org.hillview.dataset.RemoteDataSet;
@@ -29,8 +31,6 @@ import org.hillview.utils.Converters;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import rx.Observable;
-import rx.observers.TestSubscriber;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -147,14 +147,12 @@ public class RemotingTest {
         final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress);
         final IDataSet<int[]> remoteIdsNew = remoteIds.map(new IncrementMap())
                                                       .filter(p -> p.deltaValue != null)
-                                                      .toBlocking()
-                                                      .last().deltaValue;
+                                                      .blockingLast().deltaValue;
         assertNotNull(remoteIdsNew);
         final int result = remoteIdsNew.sketch(new SumSketch())
                                        .map(e -> e.deltaValue)
                                        .reduce((x, y) -> x + y)
-                                       .toBlocking()
-                                       .last();
+                                       .blockingGet();
         assertEquals(50005000, result);
     }
 
@@ -163,26 +161,22 @@ public class RemotingTest {
         final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress);
         final IDataSet<int[]> remoteIdsNew = remoteIds.map(new IncrementMap())
                 .filter(p -> p.deltaValue != null)
-                .toBlocking()
-                .last().deltaValue;
+                .blockingLast().deltaValue;
         assertNotNull(remoteIdsNew);
         final int result = remoteIdsNew.sketch(new SumSketch())
                 .map(e -> e.deltaValue)
                 .reduce((x, y) -> x + y)
-                .toBlocking()
-                .last();
+                .blockingGet();
         assertEquals(50005000, result);
 
         final IDataSet<int[]> remoteIdsNewMem = remoteIds.map(new IncrementMap())
                 .filter(p -> p.deltaValue != null)
-                .toBlocking()
-                .last().deltaValue;
+                .blockingLast().deltaValue;
         assertNotNull(remoteIdsNew);
         final int memoizedResult = remoteIdsNew.sketch(new SumSketch())
                 .map(e -> e.deltaValue)
                 .reduce((x, y) -> x + y)
-                .toBlocking()
-                .last();
+                .blockingGet();
         assertEquals(50005000, result);
     }
 
@@ -190,13 +184,12 @@ public class RemotingTest {
     public void testMapSketchThroughClientWithError() {
         final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress);
         final IDataSet<int[]> remoteIdsNew = remoteIds.map(new IncrementMap())
-                                                      .toBlocking()
-                                                      .last().deltaValue;
+                                                      .blockingLast().deltaValue;
         assertNotNull(remoteIdsNew);
-        final Observable<PartialResult<Integer>> resultObs =
+        final Flowable<PartialResult<Integer>> resultObs =
                 remoteIdsNew.sketch(new ErrorSumSketch());
         TestSubscriber<PartialResult<Integer>> ts = new TestSubscriber<PartialResult<Integer>>();
-        resultObs.toBlocking().subscribe(ts);
+        resultObs.blockingSubscribe(ts);
         ts.assertError(RuntimeException.class);
     }
 
@@ -205,14 +198,12 @@ public class RemotingTest {
     public void testMapSketchThroughClientWithImmutableCollection() {
         final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress);
         final IDataSet<int[]> remoteIdsNew = remoteIds.map(new IncrementMap())
-                                                      .toBlocking()
-                                                      .last().deltaValue;
+                                                      .blockingLast().deltaValue;
         assertNotNull(remoteIdsNew);
-        final Observable<PartialResult<List<Integer>>> resultObs =
+        final Flowable<PartialResult<List<Integer>>> resultObs =
                 remoteIdsNew.sketch(new ImmutableListSketch());
         final List<Integer> result = resultObs.map(e -> e.deltaValue)
-                                              .toBlocking()
-                                              .last();
+                                              .blockingLast();
         for (int val: result) {
             assertEquals(1, val);
         }
@@ -227,7 +218,7 @@ public class RemotingTest {
                 this.counter++;
                 super.onNext(pr);
                 if (this.counter == count)
-                    this.unsubscribe();
+                    this.dispose();
             }
         };
     }
@@ -235,23 +226,23 @@ public class RemotingTest {
     @Test
     public void testUnsubscribe() {
         final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress);
-        final Observable<PartialResult<Integer>> resultObs = remoteIds.sketch(new SumSketch());
+        final Flowable<PartialResult<Integer>> resultObs = remoteIds.sketch(new SumSketch());
         TestSubscriber<PartialResult<Integer>> ts = createUnsubscribeSubscriber(1);
-        resultObs.toBlocking().subscribe(ts);
+        resultObs.blockingSubscribe(ts);
         ts.assertValueCount(1);
-        ts.assertNotCompleted();
+        ts.assertNotComplete();
     }
 
     @Test
     public void testDoOnUnsubscribeByCaller() {
         final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress);
         final AtomicInteger count = new AtomicInteger(0);
-        final Observable<PartialResult<Integer>> resultObs =
-                remoteIds.sketch(new SumSketch()).doOnUnsubscribe(count::incrementAndGet);
+        final Flowable<PartialResult<Integer>> resultObs =
+                remoteIds.sketch(new SumSketch()).doOnCancel(count::incrementAndGet);
         TestSubscriber<PartialResult<Integer>> ts = createUnsubscribeSubscriber(3);
-        resultObs.toBlocking().subscribe(ts);
+        resultObs.blockingSubscribe(ts);
         ts.assertValueCount(3);
-        ts.assertNotCompleted();
+        ts.assertNotComplete();
         assertEquals(1, count.get());
     }
 
@@ -259,11 +250,11 @@ public class RemotingTest {
     public void testZip() {
         final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress);
         final IDataSet<int[]> remoteIdsLeft = Converters.checkNull(
-                remoteIds.map(new IncrementMap()).toBlocking().last().deltaValue);
+                remoteIds.map(new IncrementMap()).blockingLast().deltaValue);
         final IDataSet<int[]> remoteIdsRight = Converters.checkNull(
-                remoteIds.map(new IncrementMap()).toBlocking().last().deltaValue);
+                remoteIds.map(new IncrementMap()).blockingLast().deltaValue);
         final PartialResult<IDataSet<Pair<int[], int[]>>> last
-                = Converters.checkNull(remoteIdsLeft.zip(remoteIdsRight)).toBlocking().last();
+                = Converters.checkNull(remoteIdsLeft.zip(remoteIdsRight)).blockingLast();
         assertNotNull(last);
         assertEquals(last.deltaDone, 1.0, 0.001);
     }
@@ -276,7 +267,7 @@ public class RemotingTest {
             final IDataSet<int[]> remoteIds = new RemoteDataSet<int[]>(serverAddress,
                                                                        nonExistentIndex);
             final IDataSet<int[]> oneMap = Converters.checkNull(
-                    remoteIds.map(new IncrementMap()).toBlocking().last().deltaValue);
+                    remoteIds.map(new IncrementMap()).blockingLast().deltaValue);
             fail();
         }
         catch (RuntimeException ignored) {
@@ -286,7 +277,7 @@ public class RemotingTest {
             final IDataSet<int[]> remoteIdsLeft = new RemoteDataSet<int[]>(serverAddress);
             final IDataSet<int[]> remoteIdsRight = new RemoteDataSet<int[]>(serverAddress, 99);
             final PartialResult<IDataSet<Pair<int[], int[]>>> last
-                    = Converters.checkNull(remoteIdsLeft.zip(remoteIdsRight)).toBlocking().last();
+                    = Converters.checkNull(remoteIdsLeft.zip(remoteIdsRight)).blockingLast();
             fail();
         } catch (RuntimeException ignored) {
         }

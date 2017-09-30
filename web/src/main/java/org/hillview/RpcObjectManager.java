@@ -17,7 +17,7 @@
 
 package org.hillview;
 
-import rx.Subscription;
+import io.reactivex.subscribers.ResourceSubscriber;
 
 import javax.annotation.Nullable;
 import javax.websocket.Session;
@@ -47,8 +47,8 @@ public final class RpcObjectManager {
     private final HashMap<Session, RpcTarget> sessionRequest =
             new HashMap<Session, RpcTarget>(10);
     // Mapping sessions to RxJava subscriptions - needed to do cancellations.
-    private final HashMap<Session, Subscription> sessionSubscription =
-            new HashMap<Session, Subscription>(10);
+    private final HashMap<Session, ResourceSubscriber> sessionSubscription =
+            new HashMap<Session, ResourceSubscriber>(10);
 
     synchronized void addSession(Session session, @Nullable RpcTarget target) {
         this.sessionRequest.put(session, target);
@@ -62,12 +62,12 @@ public final class RpcObjectManager {
         return this.sessionRequest.get(session);
     }
 
-    @Nullable synchronized Subscription getSubscription(Session session) {
+    @Nullable synchronized ResourceSubscriber getSubscription(Session session) {
         return this.sessionSubscription.get(session);
     }
 
-    synchronized void addSubscription(Session session, Subscription subscription) {
-        if (subscription.isUnsubscribed())
+    synchronized void addSubscription(Session session, ResourceSubscriber subscription) {
+        if (subscription.isDisposed())
             // The computation may have already finished by the time we get here!
             return;
         LOGGER.log(Level.INFO, "Saving subscription " + this.toString());

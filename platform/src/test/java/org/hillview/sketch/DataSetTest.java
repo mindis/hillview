@@ -18,14 +18,17 @@
 
 package org.hillview.sketch;
 
+import io.reactivex.Flowable;
+import io.reactivex.subscribers.TestSubscriber;
 import org.hillview.dataset.LocalDataSet;
 import org.hillview.dataset.ParallelDataSet;
-import org.hillview.dataset.api.*;
+import org.hillview.dataset.api.IDataSet;
+import org.hillview.dataset.api.IMap;
+import org.hillview.dataset.api.ISketch;
+import org.hillview.dataset.api.PartialResult;
 import org.hillview.utils.Converters;
 import org.junit.Assert;
 import org.junit.Test;
-import rx.Observable;
-import rx.observers.TestSubscriber;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -92,7 +95,7 @@ public class DataSetTest {
     // This test explores the semantics of publish/connect.
     @Test
     public void RxJavaTest() {
-        Observable<String> o = Observable
+        Flowable<String> o = Flowable
                 .just("a", "b", "c")
                 .map(s -> {
                       System.out.println("Expensive operation for " + s);
@@ -101,9 +104,9 @@ public class DataSetTest {
                 .publish()
                 .autoConnect(2);
 
-        Observable<String> o1 = o.map(s -> s + "0").first().single();
-        Observable<String> o2 = o.map(s -> s + "1");
-        Observable<String> m = o1.mergeWith(o2);
+        Flowable<String> o1 = o.map(s -> s + "0").take(1);
+        Flowable<String> o2 = o.map(s -> s + "1");
+        Flowable<String> m = o1.mergeWith(o2);
         m.subscribe(s -> System.out.println("Sub1 got: " + s));
     }
 
@@ -198,7 +201,7 @@ public class DataSetTest {
     public void unsubscriptionTest() {
         ParallelDataSet<int[]> ld = this.createLargeDataset(true);
         ld.setBundleInterval(0);  // important for this test
-        Observable<PartialResult<Integer>> pr = ld.sketch(new Sum());
+        Flowable<PartialResult<Integer>> pr = ld.sketch(new Sum());
         TestSubscriber<PartialResult<Integer>> ts =
                 new TestSubscriber<PartialResult<Integer>>() {
             private int count = 0;
@@ -208,12 +211,12 @@ public class DataSetTest {
                 super.onNext(pr);
                 this.count++;
                 if (this.count == 3)
-                    this.unsubscribe();
+                    this.dispose();
             }
         };
-        pr.toBlocking().subscribe(ts);
+        pr.blockingSubscribe(ts);
 
-        ts.assertNotCompleted();
+        ts.assertNotComplete();
         ts.assertValueCount(3);
     }
 }
