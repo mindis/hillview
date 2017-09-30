@@ -235,7 +235,7 @@ public class ParallelDataSet<T> implements IDataSet<T> {
         for (int i = 0; i < mySize; i++) {
             final IDataSet<S> oChild = os.children.get(i);
             final IDataSet<T> tChild = this.children.get(i);
-            final Flowable<PartialResult<IDataSet<Pair<T, S>>>> zip = tChild.zip(oChild).takeLast(1);
+            final Flowable<PartialResult<IDataSet<Pair<T, S>>>> zip = tChild.zip(oChild).lastElement().toFlowable();
             final int finalI = i;
             obs.add(zip.map(
                     e -> new Pair<Integer, PartialResult<IDataSet<Pair<T, S>>>>(finalI, e)));

@@ -238,7 +238,7 @@ abstract class RpcTarget implements IJson {
         // of this stream pull from the *same* stream, and not from
         // two different copies; the two consumers are lastSketch and progress.
         Flowable<PartialResult<R>> add = sketches.scan(prm::add).publish().autoConnect(2);
-        Flowable<PartialResult<S>> lastSketch = add.takeLast(1)
+        Flowable<PartialResult<S>> lastSketch = add.lastElement().toFlowable()
                 .map(p -> new PartialResult<S>(p.deltaDone, postprocessing.apply(p.deltaValue)));
         Flowable<PartialResult<S>> progress = add.map(p -> new PartialResult<S>(p.deltaDone, null));
         Flowable<PartialResult<S>> result = progress.mergeWith(lastSketch);

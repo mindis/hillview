@@ -104,7 +104,7 @@ public class DataSetTest {
                 .publish()
                 .autoConnect(2);
 
-        Flowable<String> o1 = o.map(s -> s + "0").take(1);
+        Flowable<String> o1 = o.map(s -> s + "0").firstElement().toFlowable();
         Flowable<String> o2 = o.map(s -> s + "1");
         Flowable<String> m = o1.mergeWith(o2);
         m.subscribe(s -> System.out.println("Sub1 got: " + s));
