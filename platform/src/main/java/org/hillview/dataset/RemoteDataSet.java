@@ -21,6 +21,9 @@ import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
+import io.reactivex.BackpressureStrategy;
+import io.reactivex.Flowable;
+import io.reactivex.subjects.PublishSubject;
 import org.apache.commons.lang3.SerializationUtils;
 import org.hillview.dataset.api.*;
 import org.hillview.pb.Ack;
@@ -31,8 +34,6 @@ import org.hillview.dataset.remoting.*;
 import org.hillview.utils.Converters;
 import org.hillview.utils.HillviewLogging;
 import org.hillview.utils.JsonList;
-import rx.Observable;
-import rx.subjects.PublishSubject;
 
 import java.util.List;
 import java.util.UUID;
@@ -70,7 +71,7 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
      * invocation that will return the final IDataSet.
      */
     @Override
-    public <S> Observable<PartialResult<IDataSet<S>>> map(final IMap<T, S> mapper) {
+    public <S> Flowable<PartialResult<IDataSet<S>>> map(final IMap<T, S> mapper) {
         final MapOperation<T, S> mapOp = new MapOperation<T, S>(mapper);
         final byte[] serializedOp = SerializationUtils.serialize(mapOp);
         final UUID operationId = UUID.randomUUID();
@@ -82,13 +83,13 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
                                        .build();
         final PublishSubject<PartialResult<IDataSet<S>>> subj = PublishSubject.create();
         final StreamObserver<PartialResponse> responseObserver = new NewDataSetObserver<S>(subj);
-        return subj.doOnSubscribe(() -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
+        return subj.doOnSubscribe((disposable) -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
                                                  .map(command, responseObserver))
-                   .doOnUnsubscribe(() -> this.unsubscribe(operationId));
+                   .doOnDispose(() -> this.unsubscribe(operationId)).toFlowable(BackpressureStrategy.BUFFER);
     }
 
     @Override
-    public <S> Observable<PartialResult<IDataSet<S>>> flatMap(IMap<T, List<S>> mapper) {
+    public <S> Flowable<PartialResult<IDataSet<S>>> flatMap(IMap<T, List<S>> mapper) {
         final FlatMapOperation<T, S> mapOp = new FlatMapOperation<T, S>(mapper);
         final byte[] serializedOp = SerializationUtils.serialize(mapOp);
         final UUID operationId = UUID.randomUUID();
@@ -100,16 +101,16 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
                 .build();
         final PublishSubject<PartialResult<IDataSet<S>>> subj = PublishSubject.create();
         final StreamObserver<PartialResponse> responseObserver = new NewDataSetObserver<S>(subj);
-        return subj.doOnSubscribe(() -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
+        return subj.doOnSubscribe((disposable) -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
                 .flatMap(command, responseObserver))
-                .doOnUnsubscribe(() -> this.unsubscribe(operationId));
+                .doOnDispose(() -> this.unsubscribe(operationId)).toFlowable(BackpressureStrategy.BUFFER);
     }
 
     /**
      * Sketch operation that streams partial results from the server to the caller.
      */
     @Override
-    public <R> Observable<PartialResult<R>> sketch(final ISketch<T, R> sketch) {
+    public <R> Flowable<PartialResult<R>> sketch(final ISketch<T, R> sketch) {
         final SketchOperation<T, R> sketchOp = new SketchOperation<T, R>(sketch);
         final byte[] serializedOp = SerializationUtils.serialize(sketchOp);
         final UUID operationId = UUID.randomUUID();
@@ -121,16 +122,16 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
                                        .build();
         final PublishSubject<PartialResult<R>> subj = PublishSubject.create();
         final StreamObserver<PartialResponse> responseObserver = new SketchObserver<>(subj);
-        return subj.doOnSubscribe(() -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
+        return subj.doOnSubscribe((disposable) -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
                                                  .sketch(command, responseObserver))
-                   .doOnUnsubscribe(() -> this.unsubscribe(operationId));
+                   .doOnDispose(() -> this.unsubscribe(operationId)).toFlowable(BackpressureStrategy.BUFFER);
     }
 
     /**
      * Zip operation on two IDataSet objects that need to reside on the same remote server.
      */
     @Override
-    public <S> Observable<PartialResult<IDataSet<Pair<T, S>>>> zip(final IDataSet<S> other) {
+    public <S> Flowable<PartialResult<IDataSet<Pair<T, S>>>> zip(final IDataSet<S> other) {
         if (!(other instanceof RemoteDataSet<?>)) {
             throw new RuntimeException("Unexpected type in Zip " + other);
         }
@@ -157,13 +158,13 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
         final PublishSubject<PartialResult<IDataSet<Pair<T, S>>>> subj = PublishSubject.create();
         final StreamObserver<PartialResponse> responseObserver =
                                                         new NewDataSetObserver<Pair<T, S>>(subj);
-        return subj.doOnSubscribe(() -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
+        return subj.doOnSubscribe((disposable) -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
                                                  .zip(command, responseObserver))
-                   .doOnUnsubscribe(() -> this.unsubscribe(operationId));
+                   .doOnDispose(() -> this.unsubscribe(operationId)).toFlowable(BackpressureStrategy.BUFFER);
     }
 
     @Override
-    public Observable<PartialResult<JsonList<ControlMessage.Status>>> manage(ControlMessage message) {
+    public Flowable<PartialResult<JsonList<ControlMessage.Status>>> manage(ControlMessage message) {
         final ManageOperation manageOp = new ManageOperation(message);
         final byte[] serializedOp = SerializationUtils.serialize(manageOp);
         final UUID operationId = UUID.randomUUID();
@@ -176,9 +177,9 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
         final PublishSubject<PartialResult<JsonList<ControlMessage.Status>>> subj = PublishSubject.create();
         final StreamObserver<PartialResponse> responseObserver =
                 new ManageObserver(subj, message, this);
-        return subj.doOnSubscribe(() -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
-                .manage(command, responseObserver))
-                .doOnUnsubscribe(() -> this.unsubscribe(operationId));
+        return subj.doOnSubscribe((disposable) -> this.stub.withDeadlineAfter(TIMEOUT, TimeUnit.MILLISECONDS)
+                                                 .manage(command, responseObserver))
+                .doOnDispose(() -> this.unsubscribe(operationId)).toFlowable(BackpressureStrategy.BUFFER);
     }
 
     /**
@@ -232,7 +233,7 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
 
         @Override
         public void onCompleted() {
-            this.subject.onCompleted();
+            this.subject.onComplete();
         }
 
         public abstract T processResponse(final PartialResponse response);
@@ -306,7 +307,7 @@ public class RemoteDataSet<T> extends BaseDataSet<T> {
                 list.add(status);
                 this.subject.onNext(new PartialResult<JsonList<ControlMessage.Status>>(0, list));
             }
-            this.subject.onCompleted();
+            this.subject.onComplete();
         }
     }
 }

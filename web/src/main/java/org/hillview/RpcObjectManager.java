@@ -17,9 +17,9 @@
 
 package org.hillview;
 
+import io.reactivex.Observer;
+import io.reactivex.subscribers.ResourceSubscriber;
 import org.hillview.utils.HillviewLogging;
-import rx.Observer;
-import rx.Subscription;
 
 import javax.annotation.Nullable;
 import javax.websocket.Session;
@@ -57,8 +57,8 @@ public final class RpcObjectManager {
     private final HashMap<Session, RpcTarget> sessionRequest =
             new HashMap<Session, RpcTarget>(10);
     // Mapping sessions to RxJava subscriptions - needed to do cancellations.
-    private final HashMap<Session, Subscription> sessionSubscription =
-            new HashMap<Session, Subscription>(10);
+    private final HashMap<Session, ResourceSubscriber> sessionSubscription =
+            new HashMap<Session, ResourceSubscriber>(10);
 
     // TODO: persist object history into persistent storage.
     // For each object id the computation that has produced it.
@@ -77,12 +77,12 @@ public final class RpcObjectManager {
         return this.sessionRequest.get(session);
     }
 
-    @Nullable synchronized Subscription getSubscription(Session session) {
+    @Nullable synchronized ResourceSubscriber getSubscription(Session session) {
         return this.sessionSubscription.get(session);
     }
 
-    synchronized void addSubscription(Session session, Subscription subscription) {
-        if (subscription.isUnsubscribed())
+    synchronized void addSubscription(Session session, ResourceSubscriber subscription) {
+        if (subscription.isDisposed())
             // The computation may have already finished by the time we get here!
             return;
         HillviewLogging.logger().info("Saving subscription {}", this.toString());
@@ -130,7 +130,7 @@ public final class RpcObjectManager {
         RpcTarget target = this.getObject(id);
         if (target != null) {
             toNotify.onNext(target);
-            toNotify.onCompleted();
+            toNotify.onComplete();
             return;
         }
         if (rebuild) {

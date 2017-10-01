@@ -20,11 +20,12 @@ package org.hillview;
 import com.google.gson.JsonElement;
 import com.google.gson.internal.Streams;
 import com.google.gson.stream.JsonReader;
+import io.reactivex.Observer;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.subscribers.ResourceSubscriber;
 import org.hillview.utils.Converters;
 import org.hillview.utils.HillviewLogging;
 import org.hillview.utils.Utilities;
-import rx.Observer;
-import rx.Subscription;
 
 import javax.websocket.*;
 import javax.websocket.server.ServerEndpoint;
@@ -87,7 +88,7 @@ public final class RpcServer {
         // Observable invoked when the source object has been obtained.
         Observer<RpcTarget> obs = new Observer<RpcTarget>() {
             @Override
-            public void onCompleted() {}
+            public void onComplete() {}
 
             @Override
             public void onError(Throwable throwable) {
@@ -98,6 +99,11 @@ public final class RpcServer {
                     return;
                 RpcServer.this.sendReply(reply, session);
                 rpcRequest.syncCloseSession(session);
+            }
+
+            @Override
+            public void onSubscribe(Disposable disposable) {
+
             }
 
             @Override
@@ -131,10 +137,10 @@ public final class RpcServer {
     @SuppressWarnings("unused")
     @OnClose
     public void onClose(final Session session, final CloseReason reason) {
-        Subscription sub = RpcObjectManager.instance.getSubscription(session);
+        ResourceSubscriber sub = RpcObjectManager.instance.getSubscription(session);
         if (sub != null) {
             HillviewLogging.logger().info("Unsubscribing {}", this.toString());
-            sub.unsubscribe();
+            sub.dispose();
             RpcObjectManager.instance.removeSubscription(session);
         }
 

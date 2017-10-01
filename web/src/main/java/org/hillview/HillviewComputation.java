@@ -16,9 +16,10 @@
  */
 
 package org.hillview;
+import io.reactivex.Observer;
+import io.reactivex.disposables.Disposable;
 import org.hillview.utils.Converters;
 import org.hillview.utils.HillviewLogging;
-import rx.Observer;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -65,7 +66,7 @@ public class HillviewComputation implements Serializable {
         RpcTarget target = RpcObjectManager.instance.getObject(this.resultId);
         if (target != null) {
             toNotify.onNext(target);
-            toNotify.onCompleted();
+            toNotify.onComplete();
         } else {
             this.onCreate.add(toNotify);
         }
@@ -82,6 +83,11 @@ public class HillviewComputation implements Serializable {
         HillviewLogging.logger().info("Attempt to replay {}", this);
         // This observer is notified when the source object has been recreated.
         Observer<RpcTarget> sourceNotify = new SingleObserver<RpcTarget>() {
+            @Override
+            public void onSubscribe(Disposable disposable) {
+
+            }
+
             @Override
             public void onError(Throwable throwable) {
                 toNotify.onError(throwable);
@@ -129,7 +135,7 @@ public class HillviewComputation implements Serializable {
     void objectCreated(RpcTarget target) {
         for (Observer<RpcTarget> o: this.onCreate) {
             o.onNext(target);
-            o.onCompleted();
+            o.onComplete();
         }
         this.onCreate.clear();
     }

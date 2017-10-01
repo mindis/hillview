@@ -19,12 +19,12 @@ package org.hillview;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.reactivex.Flowable;
+import io.reactivex.subscribers.ResourceSubscriber;
+import org.hillview.dataset.PRDataSetMonoid;
+import org.hillview.dataset.PartialResultMonoid;
 import org.hillview.dataset.api.*;
-import org.hillview.dataset.*;
 import org.hillview.utils.*;
-import rx.Observable;
-import rx.Observer;
-import rx.Subscription;
 
 import javax.annotation.Nullable;
 import javax.websocket.Session;
@@ -72,7 +72,7 @@ abstract class RpcTarget implements IJson {
             this.computation.objectCreated(this);
     }
 
-    private synchronized void saveSubscription(RpcRequestContext context, Subscription sub) {
+    private synchronized void saveSubscription(RpcRequestContext context, ResourceSubscriber sub) {
         if (context.session != null)
             RpcObjectManager.instance.addSubscription(context.session, sub);
     }
@@ -136,7 +136,7 @@ abstract class RpcTarget implements IJson {
         return this.objectId.equals(rpcTarget.objectId);
     }
 
-    abstract class ResultObserver<T> implements Observer<PartialResult<T>> {
+    abstract class ResultObserver<T> extends ResourceSubscriber<PartialResult<T>> {
         final RpcRequest request;
         final RpcRequestContext context;
         final String name;
@@ -151,7 +151,7 @@ abstract class RpcTarget implements IJson {
         }
 
         @Override
-        public void onCompleted() {
+        public void onComplete() {
             HillviewLogging.logger().info("Computation completed for {}", this.name);
             this.request.syncCloseSession(this.context.session);
         }
@@ -226,7 +226,7 @@ abstract class RpcTarget implements IJson {
         }
 
         @Override
-        public void onCompleted() {
+        public void onComplete() {
             HillviewLogging.logger().info("Computation completed for {}", this.name);
             JsonObject json = new JsonObject();
             json.addProperty("done", 1.0);
@@ -302,15 +302,15 @@ abstract class RpcTarget implements IJson {
     runSketch(IDataSet<T> data, ISketch<T, R> sketch,
               RpcRequest request, RpcRequestContext context) {
         // Run the sketch
-        Observable<PartialResult<R>> sketches = data.sketch(sketch);
+        Flowable<PartialResult<R>> sketches = data.sketch(sketch);
         // Knows how to add partial results
         PartialResultMonoid<R> prm = new PartialResultMonoid<R>(sketch);
         // Prefix sum of the partial results
-        Observable<PartialResult<R>> add = sketches.scan(prm::add);
+        Flowable<PartialResult<R>> add = sketches.scan(prm::add);
         // Send the partial results back
         SketchResultObserver<R> robs = new SketchResultObserver<R>(
                 sketch.asString(), this, request, context);
-        Subscription sub = add.subscribe(robs);
+        ResourceSubscriber sub = add.subscribeWith(robs);
         this.saveSubscription(context, sub);
     }
 
@@ -328,16 +328,16 @@ abstract class RpcTarget implements IJson {
                       BiFunction<R, HillviewComputation, S> postprocessing,
                       RpcRequest request, RpcRequestContext context) {
         // Run the sketch
-        Observable<PartialResult<R>> sketches = data.sketch(sketch);
+        Flowable<PartialResult<R>> sketches = data.sketch(sketch);
         // Knows how to add partial results
         PartialResultMonoid<R> prm = new PartialResultMonoid<R>(sketch);
         // Prefix sum of the partial results
-        Observable<PartialResult<R>> add = sketches.scan(prm::add);
+        Flowable<PartialResult<R>> add = sketches.scan(prm::add);
         // Send the partial results back
         CompleteSketchResultObserver<T, R, S> robs = new CompleteSketchResultObserver<T, R, S>(
                 sketch.asString(), this, request, context, postprocessing);
-        Subscription sub = add.subscribe(robs);
-        this.saveSubscription(context, sub);
+        final ResourceSubscriber res = add.subscribeWith(robs);
+        this.saveSubscription(context, res);
     }
 
     /**
@@ -355,15 +355,15 @@ abstract class RpcTarget implements IJson {
            BiFunction<IDataSet<S>, HillviewComputation, RpcTarget> factory,
            RpcRequest request, RpcRequestContext context) {
         // Run the map
-        Observable<PartialResult<IDataSet<S>>> stream = data.map(map);
+        Flowable<PartialResult<IDataSet<S>>> stream = data.map(map);
         // Knows how to add partial results
         PRDataSetMonoid<S> monoid = new PRDataSetMonoid<S>();
         // Prefix sum of the partial results
-        Observable<PartialResult<IDataSet<S>>> add = stream.scan(monoid::add);
+        Flowable<PartialResult<IDataSet<S>>> add = stream.scan(monoid::add);
         // Send the partial results back
         MapResultObserver<S> robs = new MapResultObserver<S>(
                 map.asString(), this, request, context, factory);
-        Subscription sub = add.subscribe(robs);
+        ResourceSubscriber sub = add.subscribeWith(robs);
         this.saveSubscription(context, sub);
     }
 
@@ -382,16 +382,16 @@ abstract class RpcTarget implements IJson {
                BiFunction<IDataSet<S>, HillviewComputation, RpcTarget> factory,
                RpcRequest request, RpcRequestContext context) {
         // Run the flatMap
-        Observable<PartialResult<IDataSet<S>>> stream = data.flatMap(map);
+        Flowable<PartialResult<IDataSet<S>>> stream = data.flatMap(map);
         // Knows how to add partial results
         PRDataSetMonoid<S> monoid = new PRDataSetMonoid<S>();
         // Prefix sum of the partial results
-        Observable<PartialResult<IDataSet<S>>> add = stream.scan(monoid::add);
+        Flowable<PartialResult<IDataSet<S>>> add = stream.scan(monoid::add);
         // Send the partial results back
         MapResultObserver<S> robs = new MapResultObserver<S>(
                 map.asString(), this, request, context, factory);
         HillviewLogging.logger().info("Subscribing to flatMap");
-        Subscription sub = add.subscribe(robs);
+        ResourceSubscriber sub = add.subscribeWith(robs);
         this.saveSubscription(context, sub);
     }
 
@@ -409,13 +409,13 @@ abstract class RpcTarget implements IJson {
     runZip(IDataSet<T> data, IDataSet<S> other,
            BiFunction<IDataSet<Pair<T, S>>, HillviewComputation, RpcTarget> factory,
            RpcRequest request, RpcRequestContext context) {
-        Observable<PartialResult<IDataSet<Pair<T, S>>>> stream = data.zip(other);
+        Flowable<PartialResult<IDataSet<Pair<T, S>>>> stream = data.zip(other);
         PRDataSetMonoid<Pair<T, S>> monoid = new PRDataSetMonoid<Pair<T, S>>();
-        Observable<PartialResult<IDataSet<Pair<T, S>>>> add = stream.scan(monoid::add);
+        Flowable<PartialResult<IDataSet<Pair<T, S>>>> add = stream.scan(monoid::add);
         // We can actually reuse the MapResultObserver
         MapResultObserver<Pair<T, S>> robs = new MapResultObserver<Pair<T, S>>(
                                 "zip", this, request, context, factory);
-        Subscription sub = add.subscribe(robs);
+        ResourceSubscriber sub = add.subscribeWith(robs);
         this.saveSubscription(context, sub);
     }
 
@@ -430,18 +430,18 @@ abstract class RpcTarget implements IJson {
     runManage(IDataSet<T> data, ControlMessage command,
               RpcRequest request, RpcRequestContext context) {
         // Run the sketch
-        Observable<PartialResult<JsonList<ControlMessage.Status>>> sketches = data.manage(command);
+        Flowable<PartialResult<JsonList<ControlMessage.Status>>> sketches = data.manage(command);
         // Knows how to add partial results
         PartialResultMonoid<JsonList<ControlMessage.Status>> prm =
                 new PartialResultMonoid<JsonList<ControlMessage.Status>>(
                         new JsonListMonoid<ControlMessage.Status>());
         // Prefix sum of the partial results
-        Observable<PartialResult<JsonList<ControlMessage.Status>>> add = sketches.scan(prm::add);
+        Flowable<PartialResult<JsonList<ControlMessage.Status>>> add = sketches.scan(prm::add);
         // Send the partial results back
         SketchResultObserver<JsonList<ControlMessage.Status>> robs =
                 new SketchResultObserver<JsonList<ControlMessage.Status>>(
                     command.toString(), this, request, context);
-        Subscription sub = add.subscribe(robs);
+        ResourceSubscriber sub = add.subscribeWith(robs);
         this.saveSubscription(context, sub);
     }
 }

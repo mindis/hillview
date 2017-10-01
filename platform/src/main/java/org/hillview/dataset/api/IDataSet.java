@@ -17,16 +17,16 @@
 
 package org.hillview.dataset.api;
 
+import io.reactivex.Flowable;
 import org.hillview.dataset.PRDataSetMonoid;
 import org.hillview.utils.JsonList;
-import rx.Observable;
 
 import java.util.List;
 
 /**
  * A distributed dataset with elements of type T in the leaves.
- * All operations on datasets return observables, which are streams of partial results.
- * Cancellation of an operation is done by unsubscribing from such an observable.
+ * All operations on datasets return Flowables, which are streams of partial results.
+ * Cancellation of an operation is done by unsubscribing from such an Flowable.
  *
  * @param <T> Type of elements stored in the dataset.
  */
@@ -38,7 +38,7 @@ public interface IDataSet<T> {
      * @return        A stream of partial results (all IDataSet[S]), only one of which should really
      *                be the actual result.  All the other ones should be null.
      */
-    <S> Observable<PartialResult<IDataSet<S>>> map(IMap<T, S> mapper);
+    <S> Flowable<PartialResult<IDataSet<S>>> map(IMap<T, S> mapper);
 
     /**
      * Run a computation on the dataset, return another dataset.
@@ -47,7 +47,7 @@ public interface IDataSet<T> {
      * @return        A stream of partial results (all IDataSet[S]), only one of which should really
      *                be the actual result.  All the other ones should be null.
      */
-    <S> Observable<PartialResult<IDataSet<S>>> flatMap(IMap<T, List<S>> mapper);
+    <S> Flowable<PartialResult<IDataSet<S>>> flatMap(IMap<T, List<S>> mapper);
 
     /**
      * Run a sketch on a dataset, returning a value.
@@ -56,7 +56,7 @@ public interface IDataSet<T> {
      * @return        A stream of partial results, all of type R.  Adding these partial results
      *                will produce the correct final result.  The sketch itself has an 'add' method.
      */
-    <R> Observable<PartialResult<R>> sketch(ISketch<T, R> sketch);
+    <R> Flowable<PartialResult<R>> sketch(ISketch<T, R> sketch);
 
     /**
      * Combine two datasets that have the exact same topology by pairing the values in the
@@ -66,14 +66,14 @@ public interface IDataSet<T> {
      * @return       A stream of partial results which are all IDataSet[Pair[T,S]].  In fact this
      *               stream will contain exactly one result.
      */
-    <S> Observable<PartialResult<IDataSet<Pair<T, S>>>> zip(IDataSet<S> other);
+    <S> Flowable<PartialResult<IDataSet<Pair<T, S>>>> zip(IDataSet<S> other);
 
     /**
      * Execute the indicated control message at all layers of the IDataSet object.
      * @param message  Message to execute.
      * @return         A stream of partial results containing the status of all operations executed.
      */
-    Observable<PartialResult<JsonList<ControlMessage.Status>>> manage(ControlMessage message);
+    Flowable<PartialResult<JsonList<ControlMessage.Status>>> manage(ControlMessage message);
 
     // The following are various helper methods.
 
@@ -83,8 +83,8 @@ public interface IDataSet<T> {
      * @param <R>      Type of data in partial results.
      * @return         A stream containing just the data of the partial results.
      */
-    static <R> Observable<R> getValues(
-            final Observable<PartialResult<R>> results) {
+    static <R> Flowable<R> getValues(
+            final Flowable<PartialResult<R>> results) {
         return results.map(e -> e.deltaValue);
     }
 
@@ -96,14 +96,14 @@ public interface IDataSet<T> {
      * @return         A stream containing exactly one value - the sum of all
      *                 values in the data stream.
      */
-    static <R> Observable<R> reduce(
-            final Observable<R> data,
+    static <R> Flowable<R> reduce(
+            final Flowable<R> data,
             final IMonoid<R> monoid) {
-        return data.reduce(monoid.zero(), monoid::add);
+        return data.reduce(monoid.zero(), monoid::add).toFlowable();
     }
 
-    static <S> Observable<IDataSet<S>> reduce(
-            final Observable<PartialResult<IDataSet<S>>> results) {
+    static <S> Flowable<IDataSet<S>> reduce(
+            final Flowable<PartialResult<IDataSet<S>>> results) {
         final IMonoid<PartialResult<IDataSet<S>>> mono = new PRDataSetMonoid<S>();
         return getValues(reduce(results, mono));
     }
@@ -114,9 +114,9 @@ public interface IDataSet<T> {
      * Applies a map and then reduces the result immediately.
      * @param mapper  Mapper to apply to data.
      * @param <S>     Type of data in the result.
-     * @return        An observable with a single element.
+     * @return        An Flowable with a single element.
      */
-    default <S> Observable<IDataSet<S>> singleMap(
+    default <S> Flowable<IDataSet<S>> singleMap(
             final IMap<T, S> mapper) {
         return reduce(this.map(mapper));
     }
@@ -124,9 +124,9 @@ public interface IDataSet<T> {
     /**
      * Applies a zip and then reduces the result immediately.
      * @param <S>     Type of data in the result.
-     * @return        An observable with a single element.
+     * @return        An Flowable with a single element.
      */
-    default <S> Observable<IDataSet<Pair<T, S>>> singleZip(
+    default <S> Flowable<IDataSet<Pair<T, S>>> singleZip(
             final IDataSet<S> other) {
         return reduce(this.zip(other));
     }
@@ -135,9 +135,9 @@ public interface IDataSet<T> {
      * Applies a sketch and then reduces the result immediately.
      * @param sketch  Sketch to apply to the data.
      * @param <R>     Type of data in the result.
-     * @return        An observable with a single element.
+     * @return        An Flowable with a single element.
      */
-    default <R> Observable<R> singleSketch(
+    default <R> Flowable<R> singleSketch(
             final ISketch<T, R> sketch) {
         return reduce(getValues(this.sketch(sketch)), sketch);
     }
@@ -149,7 +149,7 @@ public interface IDataSet<T> {
      * @return        An IDataSet containing the final result of the map.
      */
     default <S> IDataSet<S> blockingMap(final IMap<T, S> mapper) {
-        return this.singleMap(mapper).toBlocking().single();
+        return this.singleMap(mapper).blockingSingle();
     }
 
     /**
@@ -158,7 +158,7 @@ public interface IDataSet<T> {
      * @return        An IDataSet containing the final result of the zip.
      */
     default <S> IDataSet<Pair<T, S>> blockingZip(final IDataSet<S> other) {
-        return this.singleZip(other).toBlocking().single();
+        return this.singleZip(other).blockingSingle();
     }
 
     /**
@@ -168,6 +168,6 @@ public interface IDataSet<T> {
      * @return        An IDataSet containing the final result of the test.
      */
     default <R> R blockingSketch(final ISketch<T, R> sketch) {
-        return this.singleSketch(sketch).toBlocking().single();
+        return this.singleSketch(sketch).blockingSingle();
     }
 }

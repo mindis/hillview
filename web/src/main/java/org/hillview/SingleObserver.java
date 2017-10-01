@@ -17,7 +17,8 @@
 
 package org.hillview;
 
-import rx.Observer;
+
+import io.reactivex.Observer;
 
 /**
  * An observer which expects a single item.
@@ -32,7 +33,7 @@ public abstract class SingleObserver<T> implements Observer<T> {
     public abstract void onSuccess(T t);
 
     @Override
-    public void onCompleted() {
+    public void onComplete() {
         if (this.received) return;
         this.onError(new RuntimeException("No item received"));
     }

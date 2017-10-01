@@ -18,6 +18,8 @@
 package org.hillview;
 
 import com.google.gson.JsonObject;
+import io.reactivex.Observer;
+import io.reactivex.disposables.Disposable;
 import org.hillview.dataset.ConcurrentSketch;
 import org.hillview.dataset.TripleSketch;
 import org.hillview.dataset.api.IDataSet;
@@ -41,7 +43,6 @@ import org.hillview.utils.HillviewLogging;
 import org.hillview.utils.LinAlg;
 import org.hillview.utils.Point2D;
 import org.jblas.DoubleMatrix;
-import rx.Observer;
 
 import javax.annotation.Nullable;
 import javax.websocket.Session;
@@ -243,6 +244,11 @@ public final class TableTarget extends RpcTarget {
         ProjectToEigenVectorsInfo info = request.parseArgs(ProjectToEigenVectorsInfo.class);
         Observer<RpcTarget> observer = new SingleObserver<RpcTarget>() {
             @Override
+            public void onSubscribe(Disposable disposable) {
+
+            }
+
+            @Override
             public void onSuccess(RpcTarget rpcTarget) {
                 CorrelationMatrixTarget cmt = (CorrelationMatrixTarget)rpcTarget;
                 CorrMatrix cm = cmt.corrMatrix;
@@ -311,6 +317,11 @@ public final class TableTarget extends RpcTarget {
         MakeMDSProjection info = request.parseArgs(MakeMDSProjection.class);
         Observer<RpcTarget> observer = new SingleObserver<RpcTarget>() {
             @Override
+            public void onSubscribe(Disposable disposable) {
+
+            }
+
+            @Override
             public void onSuccess(RpcTarget rpcTarget) {
                 ControlPointsTarget controlPointsTarget = (ControlPointsTarget)rpcTarget;
                 ControlPoints2D controlPoints2D = controlPointsTarget.mds(info.seed);
@@ -343,6 +354,11 @@ public final class TableTarget extends RpcTarget {
     void lampMap(RpcRequest request, RpcRequestContext context) {
         LAMPMapInfo info = request.parseArgs(LAMPMapInfo.class);
         Observer<RpcTarget> observer = new SingleObserver<RpcTarget>() {
+            @Override
+            public void onSubscribe(Disposable disposable) {
+
+            }
+
             @Override
             public void onSuccess(RpcTarget rpcTarget) {
                 ControlPointsTarget controlPointsTarget = (ControlPointsTarget)rpcTarget;
@@ -420,6 +436,11 @@ public final class TableTarget extends RpcTarget {
         HeavyHittersFilterInfo hhi = request.parseArgs(HeavyHittersFilterInfo.class);
         Observer<RpcTarget> observer = new SingleObserver<RpcTarget>() {
             @Override
+            public void onSubscribe(Disposable disposable) {
+
+            }
+
+            @Override
             public void onSuccess(RpcTarget rpcTarget) {
                 HeavyHittersTarget hht = (HeavyHittersTarget)rpcTarget;
                 ExactFreqSketch efSketch = new ExactFreqSketch(Converters.checkNull(hhi.schema), hht.heavyHitters);
@@ -435,6 +456,11 @@ public final class TableTarget extends RpcTarget {
     void filterHeavy(RpcRequest request, RpcRequestContext context) {
         HeavyHittersFilterInfo hhi = request.parseArgs(HeavyHittersFilterInfo.class);
         Observer<RpcTarget> observer = new SingleObserver<RpcTarget>() {
+            @Override
+            public void onSubscribe(Disposable disposable) {
+
+            }
+
             @Override
             public void onSuccess(RpcTarget rpcTarget) {
                 HeavyHittersTarget hht = (HeavyHittersTarget)rpcTarget;
@@ -475,6 +501,11 @@ public final class TableTarget extends RpcTarget {
     void zip(RpcRequest request, RpcRequestContext context) {
         String otherId = request.parseArgs(String.class);
         Observer<RpcTarget> observer = new SingleObserver<RpcTarget>() {
+            @Override
+            public void onSubscribe(Disposable disposable) {
+                
+            }
+
             @Override
             public void onSuccess(RpcTarget rpcTarget) {
                 TableTarget otherTable = (TableTarget)rpcTarget;
