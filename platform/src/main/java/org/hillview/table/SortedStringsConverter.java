@@ -17,6 +17,7 @@
 
 package org.hillview.table;
 
+import it.unimi.dsi.fastutil.objects.Object2DoubleOpenHashMap;
 import org.hillview.table.api.IStringConverter;
 
 import java.util.Arrays;
@@ -36,6 +37,7 @@ import java.util.Arrays;
 public class SortedStringsConverter implements IStringConverter {
     // Last boundary is inclusive
     private final String[] boundaries;
+    private final Object2DoubleOpenHashMap<String> memoizedResults;
     private final int min;
     private final int max;
 
@@ -47,6 +49,7 @@ public class SortedStringsConverter implements IStringConverter {
         if ((boundaries.length == 1) && (this.min < this.max))
             throw new RuntimeException("1 value requires a point interval");
         this.boundaries = boundaries;
+        this.memoizedResults = new Object2DoubleOpenHashMap<>();
     }
 
     public SortedStringsConverter(String[] boundaries) {
@@ -55,6 +58,10 @@ public class SortedStringsConverter implements IStringConverter {
 
     @Override
     public double asDouble(String string) {
+        return memoizedResults.computeDoubleIfAbsent(string, this::computeIndex);
+    }
+
+    public double computeIndex(String string) {
         int index = Arrays.binarySearch(this.boundaries, string);
         // This method returns index of the search key, if it is contained in the array,
         // else it returns (-(insertion point) - 1). The insertion point is the point
@@ -69,6 +76,6 @@ public class SortedStringsConverter implements IStringConverter {
         }
         if (this.boundaries.length == 1)
             return this.min + index;
-        return this.min + ((index * (double)(this.max - this.min)) / (this.boundaries.length - 1));
+        return this.min + ((index * (double) (this.max - this.min)) / (this.boundaries.length - 1));
     }
 }
